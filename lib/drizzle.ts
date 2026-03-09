@@ -1,5 +1,5 @@
 import {
-  pgTable,
+json, pgTable,
   serial,
   text,
   timestamp,
@@ -9,6 +9,7 @@ import {
 import { InferSelectModel, InferInsertModel } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
+import { Coordinates } from './validators';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' })
 
@@ -17,10 +18,7 @@ export const ShipsTable = pgTable('ships', {
   gameId: uuid('gameId').notNull(),
   playerId: uuid('playerId').notNull(),
   type: text('type').notNull(),
-  startX: integer('startX').notNull(),
-  startY: integer('startY').notNull(),
-  endX: integer('endX').notNull(),
-  endY: integer('endY').notNull(),
+  coordinates: json('coordinates').$type<Coordinates>().notNull()
 });
 
 export type Ship = InferSelectModel<typeof ShipsTable>
