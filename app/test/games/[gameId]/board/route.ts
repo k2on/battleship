@@ -1,30 +1,23 @@
-import { ShipsTable, db } from "@/lib/drizzle";
-import { eq } from "drizzle-orm";
-import { z } from "zod";
-import { CoordinatesValidator } from "@/lib/validators";
-import { randomUUID } from "crypto";
+import { db, ShipsTable } from "@/lib/drizzle";
+import { and, eq } from "drizzle-orm";
 
-const Schema = z.object({
-        playerId: z.string(),
-        ships: z.array(z.object({
-                type: z.string(),
-                coordinates: CoordinatesValidator
-        }))
-})
-
-export async function POST(request: Request, { params }: { params: Promise<{ gameId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ gameId: string }> }) {
         const { gameId } = await params;
-        const body = await Schema.parseAsync(await request.json());
 
-        for (const ship of body.ships) {
-                await db.insert(ShipsTable).values({
-                        id: randomUUID(),
-                        gameId,
-                        playerId: body.playerId,
-                        type: ship.type,
-                        coordinates: ship.coordinates,
-                });
-        }
+        const searchParams = new URL(request.url).searchParams;
+        const playerId = searchParams.get("playerId");
+        if (!playerId) return new Response("No player ID", { status: 400 });
 
-        return new Response("ok");
+        const ships = await db.select()
+                .from(ShipsTable)
+                .where(and(
+                        eq(ShipsTable.playerId, playerId),
+                        eq(ShipsTable.gameId, gameId)
+
+                ));
+
+        return new Response(JSON.stringify(ships));
 }
+
+
+
