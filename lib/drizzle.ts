@@ -35,6 +35,20 @@ export const UsersTable = pgTable(
   }
 )
 
+export const GamesTable = pgTable('games', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  player1Id: uuid('player1Id').notNull(),
+  player2Id: uuid('player2Id'), // nullable until someone joins
+  status: text('status', { enum: ['waiting', 'active', 'finished'] }).notNull().default('waiting'),
+  currentTurn: uuid('currentTurn'), // nullable until game starts
+  winnerId: uuid('winnerId'),       // nullable until game ends
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+});
+
+export type Game = InferSelectModel<typeof GamesTable>
+export type NewGame = InferInsertModel<typeof GamesTable>
+
 export type User = InferSelectModel<typeof UsersTable>
 export type NewUser = InferInsertModel<typeof UsersTable>
 
