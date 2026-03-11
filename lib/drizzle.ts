@@ -1,6 +1,5 @@
 import {
 json, pgTable,
-  serial,
   text,
   timestamp,
   uuid,
@@ -14,9 +13,9 @@ import { Coordinates } from './validators';
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' })
 
 export const ShipsTable = pgTable('ships', {
-  id: uuid('id').primaryKey(),
-  gameId: uuid('gameId').notNull(),
-  playerId: uuid('playerId').notNull(),
+  id: text('id').primaryKey(),
+  gameId: text('gameId').notNull(),
+  playerId: text('playerId').notNull(),
   type: text('type').notNull(),
   coordinates: json('coordinates').$type<Coordinates>().notNull()
 });
@@ -27,7 +26,7 @@ export type NewShip = InferInsertModel<typeof ShipsTable>
 export const UsersTable = pgTable(
   'profiles',
   {
-    id: serial('id').primaryKey(),
+    id: text('id').primaryKey(),
     name: text('name').notNull(),
     email: text('email').notNull(),
     image: text('image').notNull(),
@@ -36,12 +35,12 @@ export const UsersTable = pgTable(
 )
 
 export const GamesTable = pgTable('games', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  player1Id: uuid('player1Id').notNull(),
-  player2Id: uuid('player2Id'), // nullable until someone joins
+  id: text('id').primaryKey(),
+  player1Id: text('player1Id').notNull(),
+  player2Id: text('player2Id'), // nullable until someone joins
   status: text('status', { enum: ['waiting', 'active', 'finished'] }).notNull().default('waiting'),
-  currentTurn: uuid('currentTurn'), // nullable until game starts
-  winnerId: uuid('winnerId'),       // nullable until game ends
+  currentTurn: text('currentTurn'), // nullable until game starts
+  winnerId: text('winnerId'),       // nullable until game ends
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 });
