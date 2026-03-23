@@ -1,17 +1,28 @@
+// middleware.ts
 import { NextRequest, NextResponse } from "next/server";
 
 const TEST_PASSWORD = process.env.TEST_PASSWORD!;
 
-export function proxy(request: NextRequest) {
-  const testHeader = request.headers.get("X-Test-Mode");
+export function middleware(request: NextRequest) {
+  const { method } = request;
+  const { pathname, search } = request.nextUrl;
 
-  if (!testHeader || testHeader !== TEST_PASSWORD) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Log every request
+  console.log(`${method} ${pathname}${search}`);
+
+  // Proxy check for /api/test/* routes
+  if (pathname.startsWith("/api/test")) {
+    const testHeader = request.headers.get("X-Test-Mode");
+    if (!testHeader || testHeader !== TEST_PASSWORD) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: "/api/test/:path*",
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico).*)",
+  ],
 };
