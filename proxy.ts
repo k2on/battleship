@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 
 const TEST_PASSWORD = process.env.TEST_PASSWORD!;
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { method } = request;
   const { pathname, search } = request.nextUrl;
 
   // Log every request
   console.log(`${method} ${pathname}${search}`);
-  console.log(request.body);
+  try {
+    const b = await request.json();
+    console.log(b);
+  } catch (e) {
+  }
 
   // Test mode auth check (only for /api/test routes)
   if (pathname.startsWith("/api/test")) {
