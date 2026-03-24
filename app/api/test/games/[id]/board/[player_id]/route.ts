@@ -1,5 +1,4 @@
 import { db, GamesTable, ShipsTable, ShotsTable } from "@/lib/drizzle";
-import { validateTestAuth } from "@/lib/test-auth";
 import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -7,10 +6,6 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; player_id: string }> }
 ) {
-  // Auth check
-  const authError = validateTestAuth(request);
-  if (authError) return authError;
-
   try {
     const { id, player_id } = await params;
 
@@ -49,10 +44,10 @@ export async function GET(
 
     // Place ships on grid
     for (const ship of ships) {
-      const coords = ship.coordinates as Array<{ x: number; y: number }>;
-      for (const coord of coords) {
-        if (coord.x >= 0 && coord.x < gridSize && coord.y >= 0 && coord.y < gridSize) {
-          grid[coord.y][coord.x] = "ship";
+      const coords = ship.coordinates as [number, number][];
+      for (const [x, y] of coords) {
+        if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
+          grid[y][x] = "ship";
         }
       }
     }
