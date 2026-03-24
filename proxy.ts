@@ -11,6 +11,7 @@ export function proxy(request: NextRequest) {
 
   // Test mode auth check (only for /api/test routes)
   if (pathname.startsWith("/api/test")) {
+    console.log(request.headers);
     const testHeader = request.headers.get("X-Test-Mode");
     if (!testHeader || testHeader !== TEST_PASSWORD) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
