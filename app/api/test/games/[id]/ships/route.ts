@@ -27,6 +27,7 @@ export async function POST(
                 }
 
                 const ships = body.ships;
+                console.log("Test ships request body:", JSON.stringify(body, null, 2));
                 if (!Array.isArray(ships) || ships.length === 0) {
                         return NextResponse.json({ error: "Ships required" }, { status: 400 });
                 }
@@ -38,14 +39,30 @@ export async function POST(
                                 and(eq(ShipsTable.gameId, id), eq(ShipsTable.playerId, playerId))
                         );
 
-                // Insert ships directly without validation (deterministic test placement)
-                const shipRows = ships.map((ship: any, index: number) => ({
-                        id: randomUUID(),
-                        gameId: id,
-                        playerId: playerId,
-                        type: ship.type ?? `ship_${index + 1}`,
-                        coordinates: ship.coordinates,
-                }));
+                // Ships can arrive in two formats:
+                // 1. Flat array of {row, col} — each entry is a single-cell ship
+                // 2. Array of objects with a .coordinates property
+                const shipRows = ships.map((ship: any, index: number) => {
+                        let coordinates: any;
+
+                        if (ship.coordinates) {
+                                // Format 2: ship has nested coordinates
+                                coordinates = ship.coordinates;
+                        } else if (ship.row !== undefined && ship.col !== undefined) {
+                                // Format 1: each ship IS a coordinate {row, col}
+                                coordinates = [{ row: ship.row, col: ship.col }];
+                        } else {
+                                coordinates = [];
+                        }
+
+                        return {
+                                id: randomUUID(),
+                                gameId: id,
+                                playerId: playerId,
+                                type: ship.type ?? `ship_${index + 1}`,
+                                coordinates,
+                        };
+                });
 
                 await db.insert(ShipsTable).values(shipRows);
 
@@ -92,33 +109,3 @@ export async function GET(
                 );
         }
 }
-// import { ShipsTable, db } from "@/lib/drizzle";
-// import { eq } from "drizzle-orm";
-// import { z } from "zod";
-// import { CoordinatesValidator } from "@/lib/validators";
-// import { randomUUID } from "crypto";
-//
-// const Schema = z.object({
-//         playerId: z.string(),
-//         ships: z.array(z.object({
-//                 type: z.string(),
-//                 coordinates: CoordinatesValidator
-//         }))
-// })
-//
-// export async function POST(request: Request, { params }: { params: Promise<{ gameId: string }> }) {
-//         const { gameId } = await params;
-//         const body = await Schema.parseAsync(await request.json());
-//
-//         for (const ship of body.ships) {
-//                 await db.insert(ShipsTable).values({
-//                         id: randomUUID(),
-//                         gameId,
-//                         playerId: body.playerId,
-//                         type: ship.type,
-//                         coordinates: ship.coordinates,
-//                 });
-//         }
-//
-//         return new Response("ok");
-// }

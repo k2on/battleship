@@ -44,10 +44,21 @@ export async function GET(
 
     // Place ships on grid
     for (const ship of ships) {
-      const coords = ship.coordinates as [number, number][];
-      for (const [x, y] of coords) {
-        if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
-          grid[y][x] = "ship";
+      const coords = ship.coordinates as any[];
+      for (const coord of coords) {
+        // Handle {row, col} or {x, y} or [x, y] formats
+        let r: number, c: number;
+        if (Array.isArray(coord)) {
+          [c, r] = coord;
+        } else if (coord.row !== undefined && coord.col !== undefined) {
+          r = coord.row;
+          c = coord.col;
+        } else {
+          r = coord.y;
+          c = coord.x;
+        }
+        if (r >= 0 && r < gridSize && c >= 0 && c < gridSize) {
+          grid[r][c] = "ship";
         }
       }
     }
