@@ -8,6 +8,7 @@ export function proxy(request: NextRequest) {
 
   // Log every request
   console.log(`${method} ${pathname}${search}`);
+  console.log(request.body);
 
   // Test mode auth check (only for /api/test routes)
   if (pathname.startsWith("/api/test")) {
