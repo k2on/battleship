@@ -20,9 +20,9 @@ export async function GET(
                         .from(PlayersTable)
                         .where(eq(PlayersTable.id, playerId));
 
-                if (!player) {
-                        return NextResponse.json({ error: "Player not found" }, { status: 404 });
-                }
+                // if (!player) {
+                //         return NextResponse.json({ error: "Player not found" }, { status: 404 });
+                // }
 
                 // Count games played (only active or finished games where this player participated)
                 const gamesAsP1 = await db

@@ -38,9 +38,9 @@ export async function POST(
                         return NextResponse.json({ error: "Missing player_id" }, { status: 400 });
                 }
 
-                if (game.player1Id !== playerId && game.player2Id !== playerId) {
-                        return NextResponse.json({ error: "Player not in this game" }, { status: 403 });
-                }
+                // if (game.player1Id !== playerId && game.player2Id !== playerId) {
+                //         return NextResponse.json({ error: "Player not in this game" }, { status: 403 });
+                // }
 
                 const ships = body.ships;
 
