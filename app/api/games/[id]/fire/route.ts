@@ -211,7 +211,9 @@ export async function POST(
       game_status: gameOver ? "finished" : "active",
     };
     if (sunkShipType) response.sunk = sunkShipType;
-    if (gameOver) response.winner_id = playerId;
+    if (gameOver) response.winner_id = parseInt(playerId);
+
+    console.log("FIRE RESPONSE:", JSON.stringify(response));
 
     return NextResponse.json(response, { status: 200 });
   } catch (error) {
