@@ -46,8 +46,17 @@ export const GamesTable = pgTable("games", {
   currentTurn: text("currentTurn"),
   winnerId: text("winnerId"),
   gridSize: integer("gridSize").notNull().default(10),
+  maxPlayers: integer("maxPlayers").notNull().default(2),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export const GamePlayersTable = pgTable("game_players", {
+  id: serial("id").primaryKey(),
+  gameId: text("gameId").notNull(),
+  playerId: text("playerId").notNull(),
+  joinOrder: integer("joinOrder").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export const ShotsTable = pgTable("shots", {

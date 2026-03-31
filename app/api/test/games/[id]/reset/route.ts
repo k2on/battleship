@@ -1,7 +1,17 @@
-import { ShipsTable, db } from "@/lib/drizzle";
-import { eq } from "drizzle-orm";
+import { db, GamesTable, ShipsTable, PlayersTable, ShotsTable, GamePlayersTable } from "@/lib/drizzle";
+import { NextResponse } from "next/server";
 
-export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
-        const { id: gameId } = await params;
-        await db.delete(ShipsTable).where(eq(ShipsTable.gameId, gameId))
+export async function POST() {
+        try {
+                await db.delete(ShotsTable);
+                await db.delete(ShipsTable);
+                await db.delete(GamePlayersTable);
+                await db.delete(GamesTable);
+                await db.delete(PlayersTable);
+
+                return NextResponse.json({ status: "ok" }, { status: 200 });
+        } catch (error) {
+                console.error("Reset error:", error);
+                return NextResponse.json({ error: "Failed to reset" }, { status: 500 });
+        }
 }

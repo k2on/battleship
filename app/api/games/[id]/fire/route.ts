@@ -2,7 +2,6 @@ import { db, GamesTable, ShipsTable, ShotsTable } from "@/lib/drizzle";
 import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
-// Extract row/col from any coordinate format stored in DB
 function getRowCol(coord: any): { row: number; col: number } {
   if (coord.row !== undefined && coord.col !== undefined) {
     return { row: coord.row, col: coord.col };
@@ -34,7 +33,7 @@ export async function POST(
     }
 
     if (game.status === "finished") {
-      return NextResponse.json({ error: "Game is already finished" }, { status: 400 });
+      return NextResponse.json({ error: "Game is already finished" }, { status: 409 });
     }
 
     if (game.status === "waiting") {
@@ -46,9 +45,9 @@ export async function POST(
       return NextResponse.json({ error: "Missing player_id" }, { status: 400 });
     }
 
-    // if (game.player1Id !== playerId && game.player2Id !== playerId) {
-    //   return NextResponse.json({ error: "Player not in this game" }, { status: 403 });
-    // }
+    if (game.player1Id !== playerId && game.player2Id !== playerId) {
+      return NextResponse.json({ error: "Player not in this game" }, { status: 403 });
+    }
 
     // Check both players have placed ships
     const player1Ships = await db
@@ -73,7 +72,6 @@ export async function POST(
       return NextResponse.json({ error: "It is not your turn" }, { status: 409 });
     }
 
-    // Accept row/col or x/y
     const row = body.row ?? body.y;
     const col = body.col ?? body.x;
 
@@ -88,7 +86,7 @@ export async function POST(
       return NextResponse.json({ error: "Coordinates out of bounds" }, { status: 400 });
     }
 
-    // Check for duplicate shot (store as row=x, col=y in ShotsTable)
+    // Check for duplicate shot
     const existingShots = await db
       .select()
       .from(ShotsTable)
@@ -125,7 +123,6 @@ export async function POST(
       if (isHit) {
         hit = true;
 
-        // Check if this ship is now fully sunk
         const prevShots = await db
           .select()
           .from(ShotsTable)
@@ -195,7 +192,13 @@ export async function POST(
         .where(eq(GamesTable.id, id));
     }
 
-    const response: any = { hit, row, col, game_over: gameOver };
+    const response: any = {
+      hit,
+      row,
+      col,
+      game_over: gameOver,
+      game_status: gameOver ? "finished" : "active",
+    };
     if (sunkShipType) response.sunk = sunkShipType;
     if (gameOver) response.winner_id = playerId;
 

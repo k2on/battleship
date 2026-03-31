@@ -1,5 +1,5 @@
 import { db, PlayersTable, GamesTable, ShotsTable } from "@/lib/drizzle";
-import { eq, or, and, sql } from "drizzle-orm";
+import { eq, or, and } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
@@ -14,55 +14,50 @@ export async function GET(
                         return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
                 }
 
-                // Check player exists
                 const [player] = await db
                         .select()
                         .from(PlayersTable)
                         .where(eq(PlayersTable.id, playerId));
 
-                // if (!player) {
-                //         return NextResponse.json({ error: "Player not found" }, { status: 404 });
-                // }
+                if (!player) {
+                        return NextResponse.json({ error: "Player not found" }, { status: 404 });
+                }
 
-                // Count games played (only active or finished games where this player participated)
-                const gamesAsP1 = await db
+                const playerIdStr = playerId.toString();
+
+                // Count finished games where this player participated
+                const finishedAsP1 = await db
                         .select()
                         .from(GamesTable)
                         .where(
                                 and(
-                                        eq(GamesTable.player1Id, playerId.toString()),
-                                        or(
-                                                eq(GamesTable.status, "active"),
-                                                eq(GamesTable.status, "finished")
-                                        )
+                                        eq(GamesTable.player1Id, playerIdStr),
+                                        eq(GamesTable.status, "finished")
                                 )
                         );
 
-                const gamesAsP2 = await db
+                const finishedAsP2 = await db
                         .select()
                         .from(GamesTable)
                         .where(
                                 and(
-                                        eq(GamesTable.player2Id, playerId.toString()),
-                                        or(
-                                                eq(GamesTable.status, "active"),
-                                                eq(GamesTable.status, "finished")
-                                        )
+                                        eq(GamesTable.player2Id, playerIdStr),
+                                        eq(GamesTable.status, "finished")
                                 )
                         );
 
-                const games_played = gamesAsP1.length + gamesAsP2.length;
+                const games_played = finishedAsP1.length + finishedAsP2.length;
 
                 // Count wins
                 const winsResult = await db
                         .select()
                         .from(GamesTable)
-                        .where(eq(GamesTable.winnerId, playerId.toString()));
+                        .where(eq(GamesTable.winnerId, playerIdStr));
 
                 const wins = winsResult.length;
                 const losses = games_played - wins;
 
-                // Count shots and hits
+                // Count shots and hits across ALL games (stats survive restart)
                 const shots = await db
                         .select()
                         .from(ShotsTable)
