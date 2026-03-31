@@ -177,7 +177,18 @@ export async function POST(
         }
       }
 
+      console.log("WIN CHECK:", {
+        playerId,
+        opponentId,
+        opponentShipCount: opponentShips.length,
+        allOpponentCoords,
+        hitSetEntries: Array.from(hitSet),
+        allShotsCount: allShotsNow.length,
+        hitShotsCount: allShotsNow.filter((s) => s.hit === 1).length,
+      });
+
       gameOver = allOpponentCoords.every((c) => hitSet.has(c));
+      console.log("gameOver:", gameOver);
     }
 
     if (gameOver) {
