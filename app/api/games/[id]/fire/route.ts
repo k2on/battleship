@@ -1,5 +1,5 @@
-import { db, GamesTable, ShipsTable, ShotsTable } from "@/lib/drizzle";
-import { and, eq } from "drizzle-orm";
+import { db, GamesTable, ShipsTable, ShotsTable, PlayersTable } from "@/lib/drizzle";
+import { and, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 function getRowCol(coord: any): { row: number; col: number } {
@@ -152,6 +152,15 @@ export async function POST(
       hit: hit ? 1 : 0,
     });
 
+    // Increment shot stats on player
+    await db
+      .update(PlayersTable)
+      .set({
+        totalShots: sql`${PlayersTable.totalShots} + 1`,
+        totalHits: hit ? sql`${PlayersTable.totalHits} + 1` : PlayersTable.totalHits,
+      })
+      .where(eq(PlayersTable.id, parseInt(playerId)));
+
     // Switch turns
     const nextTurn = playerId === game.player1Id ? game.player2Id! : game.player1Id;
 
@@ -177,18 +186,7 @@ export async function POST(
         }
       }
 
-      console.log("WIN CHECK:", {
-        playerId,
-        opponentId,
-        opponentShipCount: opponentShips.length,
-        allOpponentCoords,
-        hitSetEntries: Array.from(hitSet),
-        allShotsCount: allShotsNow.length,
-        hitShotsCount: allShotsNow.filter((s) => s.hit === 1).length,
-      });
-
       gameOver = allOpponentCoords.every((c) => hitSet.has(c));
-      console.log("gameOver:", gameOver);
     }
 
     if (gameOver) {
@@ -196,6 +194,26 @@ export async function POST(
         .update(GamesTable)
         .set({ status: "finished", winnerId: playerId, currentTurn: null, updatedAt: new Date() })
         .where(eq(GamesTable.id, id));
+
+      // Increment cumulative stats for both players
+      const winnerId = parseInt(playerId);
+      const loserId = parseInt(opponentId);
+
+      await db
+        .update(PlayersTable)
+        .set({
+          gamesPlayed: sql`${PlayersTable.gamesPlayed} + 1`,
+          wins: sql`${PlayersTable.wins} + 1`,
+        })
+        .where(eq(PlayersTable.id, winnerId));
+
+      await db
+        .update(PlayersTable)
+        .set({
+          gamesPlayed: sql`${PlayersTable.gamesPlayed} + 1`,
+          losses: sql`${PlayersTable.losses} + 1`,
+        })
+        .where(eq(PlayersTable.id, loserId));
     } else {
       await db
         .update(GamesTable)

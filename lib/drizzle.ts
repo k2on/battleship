@@ -17,6 +17,11 @@ const sql = postgres(process.env.POSTGRES_URL!, { ssl: "require" });
 export const PlayersTable = pgTable("players", {
   id: serial("id").primaryKey(),
   username: text("username").notNull(),
+  gamesPlayed: integer("gamesPlayed").notNull().default(0),
+  wins: integer("wins").notNull().default(0),
+  losses: integer("losses").notNull().default(0),
+  totalShots: integer("totalShots").notNull().default(0),
+  totalHits: integer("totalHits").notNull().default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
