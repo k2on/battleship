@@ -1,8 +1,8 @@
 import { db, ShipsTable } from "@/lib/drizzle";
 import { and, eq } from "drizzle-orm";
 
-export async function GET(request: Request, { params }: { params: Promise<{ gameId: string }> }) {
-        const { gameId } = await params;
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+        const { id: gameId } = await params;
 
         const searchParams = new URL(request.url).searchParams;
         const playerId = searchParams.get("playerId");

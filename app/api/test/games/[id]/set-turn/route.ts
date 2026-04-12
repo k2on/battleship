@@ -5,9 +5,9 @@ import { eq } from "drizzle-orm";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ gameId: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { gameId } = await params;
+  const { id: gameId } = await params;
 
   let body: { playerId: string };
   try {
@@ -58,4 +58,4 @@ export async function POST(
     { message: "Turn set successfully", gameId, currentTurn: playerId },
     { status: 200 }
   );
-}
+} 
