@@ -1,8 +1,28 @@
-'use client'
+"use client";
 
-import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleNewGame() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/games", { method: "POST" });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const game = await res.json();
+      // Adjust this path once you have a game page
+      router.push(`/games/${game.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create game");
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="home">
       {/* Animated ocean grid background */}
@@ -45,15 +65,20 @@ export default function Home() {
 
         {/* CTA buttons */}
         <div className="actions">
-          <Link href="/test/games/new" className="btn btn-primary">
-            <span className="btn-icon">⚓</span>
-            DEPLOY FLEET
-          </Link>
-          <Link href="/test/games" className="btn btn-secondary">
-            <span className="btn-icon">📡</span>
-            ACTIVE MISSIONS
-          </Link>
+          <button
+            className={`btn btn-primary${loading ? " btn-loading" : ""}`}
+            onClick={handleNewGame}
+            disabled={loading}
+          >
+            <span className="btn-icon">{loading ? "⏳" : "⚓"}</span>
+            {loading ? "DEPLOYING..." : "DEPLOY FLEET"}
+          </button>
         </div>
+
+        {/* Error message */}
+        {error && (
+          <div className="error-msg">⚠ {error}</div>
+        )}
 
         {/* Stats row */}
         <div className="stats">
@@ -333,6 +358,21 @@ export default function Home() {
           border-color: var(--cyan);
           color: var(--cyan);
           transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .error-msg {
+          font-size: 0.75rem;
+          letter-spacing: 0.1em;
+          color: var(--red);
+          border: 1px solid var(--red);
+          padding: 6px 14px;
+          opacity: 0.9;
         }
 
         /* ── Stats ── */
