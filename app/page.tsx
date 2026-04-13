@@ -16,7 +16,7 @@ export default function Home() {
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const game = await res.json();
       // Adjust this path once you have a game page
-      router.push(`/games/${game.id}`);
+      router.push(`/games/${game.game_id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create game");
       setLoading(false);
