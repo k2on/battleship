@@ -182,9 +182,9 @@ function BattleGrid({
                   key={key}
                   state={state}
                   size={size}
-                  disabled={!canFire || !isOpponentGrid || firedSet.has(key)}
+                  disabled={!isOpponentGrid || firedSet.has(key)}
                   onClick={
-                    isOpponentGrid && canFire && !firedSet.has(key)
+                    isOpponentGrid && !firedSet.has(key)
                       ? () => onFire?.(r - 1, ci)
                       : undefined
                   }
@@ -314,7 +314,8 @@ export default function GamePage() {
   }
 
   const isMyTurn = game?.current_turn === playerId && game?.status === "active";
-  const isPlayer = playerId && game?.players.includes(playerId);
+  const isPlayer = !!(playerId && game?.players.includes(playerId));
+  const isActivePlayer = !!(playerId && game?.status === "active");
   const canJoin = game?.status === "waiting" && (game?.players.length ?? 0) < (game?.max_players ?? 2) && !isPlayer;
 
   const myMoveCount = moves.filter(m => m.player_id.toString() === playerId).length;
@@ -467,7 +468,7 @@ export default function GamePage() {
                     viewerPlayerId={playerId}
                     isOpponentGrid={true}
                     onFire={handleFire}
-                    canFire={isMyTurn && !firing}
+                    canFire={isActivePlayer && !firing}
                   />
                 </div>
               </div>
