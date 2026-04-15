@@ -8,21 +8,25 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const gameId = parseInt(id, 10);
+
+    if (isNaN(gameId) || gameId <= 0) {
+      return NextResponse.json({ error: "Game not found" }, { status: 404 });
+    }
 
     const [game] = await db
       .select()
       .from(GamesTable)
-      .where(eq(GamesTable.id, id));
+      .where(eq(GamesTable.id, gameId));
 
     if (!game) {
       return NextResponse.json({ error: "Game not found" }, { status: 404 });
     }
 
-    // Get all players in this game
     const gamePlayers = await db
       .select()
       .from(GamePlayersTable)
-      .where(eq(GamePlayersTable.gameId, id));
+      .where(eq(GamePlayersTable.gameId, gameId));
 
     const playerIds = gamePlayers
       .sort((a, b) => a.joinOrder - b.joinOrder)
@@ -30,16 +34,13 @@ export async function GET(
 
     return NextResponse.json({
       game_id: game.id,
-      player1_id: game.player1Id,
-      player2_id: game.player2Id ?? null,
-      players: playerIds,
-      status: game.status,
-      current_turn: game.currentTurn ?? null,
-      winner_id: game.winnerId ?? null,
       grid_size: game.gridSize,
       max_players: game.maxPlayers,
-      created_at: game.createdAt,
-      updated_at: game.updatedAt,
+      status: game.status,
+      players: playerIds,
+      current_turn_player_id: game.currentTurn ?? null,
+      winner_id: game.winnerId ?? null,
+      total_moves: game.totalMoves,
     });
   } catch (error) {
     console.error("Get game error:", error);

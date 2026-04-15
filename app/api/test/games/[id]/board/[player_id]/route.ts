@@ -8,48 +8,42 @@ export async function GET(
 ) {
   try {
     const { id, player_id } = await params;
+    const gameId = parseInt(id, 10);
 
-    // Find the game
+    if (isNaN(gameId)) {
+      return NextResponse.json({ error: "Game not found" }, { status: 404 });
+    }
+
     const [game] = await db
       .select()
       .from(GamesTable)
-      .where(eq(GamesTable.id, id));
+      .where(eq(GamesTable.id, gameId));
 
     if (!game) {
       return NextResponse.json({ error: "Game not found" }, { status: 404 });
     }
 
-    // Get ships for this player
     const ships = await db
       .select()
       .from(ShipsTable)
-      .where(
-        and(
-          eq(ShipsTable.gameId, id),
-          eq(ShipsTable.playerId, player_id)
-        )
-      );
+      .where(and(eq(ShipsTable.gameId, gameId.toString()), eq(ShipsTable.playerId, player_id)));
 
-    // Get shots against this player (shots in this game NOT by this player)
     const shots = await db
       .select()
       .from(ShotsTable)
-      .where(eq(ShotsTable.gameId, id));
+      .where(eq(ShotsTable.gameId, gameId));
 
-    // Build the grid
     const gridSize = game.gridSize;
     const grid: string[][] = Array.from({ length: gridSize }, () =>
       Array.from({ length: gridSize }, () => "empty")
     );
 
-    // Place ships on grid
     for (const ship of ships) {
       const coords = ship.coordinates as any[];
       for (const coord of coords) {
-        // Handle {row, col} or {x, y} or [x, y] formats
         let r: number, c: number;
         if (Array.isArray(coord)) {
-          [c, r] = coord;
+          [r, c] = coord;
         } else if (coord.row !== undefined && coord.col !== undefined) {
           r = coord.row;
           c = coord.col;
@@ -63,21 +57,15 @@ export async function GET(
       }
     }
 
-    // Mark shots on grid
     for (const shot of shots) {
-      if (
-        shot.playerId.toString() !== player_id &&
-        shot.x >= 0 &&
-        shot.x < gridSize &&
-        shot.y >= 0 &&
-        shot.y < gridSize
-      ) {
-        grid[shot.y][shot.x] = shot.hit === 1 ? "hit" : "miss";
+      if (shot.playerId.toString() !== player_id &&
+        shot.x >= 0 && shot.x < gridSize && shot.y >= 0 && shot.y < gridSize) {
+        grid[shot.x][shot.y] = shot.hit === 1 ? "hit" : "miss";
       }
     }
 
     return NextResponse.json({
-      game_id: id,
+      game_id: gameId,
       player_id: player_id,
       grid_size: gridSize,
       grid,
@@ -85,9 +73,6 @@ export async function GET(
     });
   } catch (error) {
     console.error("Board reveal error:", error);
-    return NextResponse.json(
-      { error: "Failed to get board" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to get board" }, { status: 500 });
   }
 }

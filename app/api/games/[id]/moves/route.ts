@@ -8,11 +8,16 @@ export async function GET(
 ) {
         try {
                 const { id } = await params;
+                const gameId = parseInt(id, 10);
+
+                if (isNaN(gameId)) {
+                        return NextResponse.json({ error: "Game not found" }, { status: 404 });
+                }
 
                 const [game] = await db
                         .select()
                         .from(GamesTable)
-                        .where(eq(GamesTable.id, id));
+                        .where(eq(GamesTable.id, gameId));
 
                 if (!game) {
                         return NextResponse.json({ error: "Game not found" }, { status: 404 });
@@ -21,18 +26,17 @@ export async function GET(
                 const shots = await db
                         .select()
                         .from(ShotsTable)
-                        .where(eq(ShotsTable.gameId, id));
+                        .where(eq(ShotsTable.gameId, gameId));
 
                 const moves = shots.map((shot) => ({
                         player_id: shot.playerId,
                         row: shot.x,
                         col: shot.y,
-                        hit: shot.hit === 1,
-                        created_at: shot.createdAt,
+                        result: shot.hit === 1 ? "hit" : "miss",
                 }));
 
                 return NextResponse.json({
-                        game_id: id,
+                        game_id: gameId,
                         moves,
                 });
         } catch (error) {

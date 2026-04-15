@@ -8,34 +8,40 @@ export async function POST(
 ) {
         try {
                 const { id } = await params;
+                const gameId = parseInt(id, 10);
+
+                if (isNaN(gameId)) {
+                        return NextResponse.json({ error: "Game not found" }, { status: 404 });
+                }
 
                 const [game] = await db
                         .select()
                         .from(GamesTable)
-                        .where(eq(GamesTable.id, id));
+                        .where(eq(GamesTable.id, gameId));
 
                 if (!game) {
                         return NextResponse.json({ error: "Game not found" }, { status: 404 });
                 }
 
-                // Clear ships and shots for this game only (stats in other games survive)
-                await db.delete(ShotsTable).where(eq(ShotsTable.gameId, id));
-                await db.delete(ShipsTable).where(eq(ShipsTable.gameId, id));
+                // Clear shots and ships for this game
+                await db.delete(ShotsTable).where(eq(ShotsTable.gameId, gameId));
+                await db.delete(ShipsTable).where(eq(ShipsTable.gameId, gameId.toString()));
 
-                // Reset game state back to waiting
+                // Reset game state to waiting_setup
                 await db
                         .update(GamesTable)
                         .set({
-                                status: "waiting",
+                                status: "waiting_setup",
                                 currentTurn: null,
                                 winnerId: null,
+                                totalMoves: 0,
                                 updatedAt: new Date(),
                         })
-                        .where(eq(GamesTable.id, id));
+                        .where(eq(GamesTable.id, gameId));
 
                 return NextResponse.json({
-                        game_id: id,
-                        status: "waiting",
+                        game_id: gameId,
+                        status: "waiting_setup",
                         message: "Game restarted successfully",
                 }, { status: 200 });
         } catch (error) {

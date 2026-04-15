@@ -3,14 +3,12 @@ import {
   pgTable,
   text,
   timestamp,
-  uuid,
   integer,
   serial,
 } from "drizzle-orm/pg-core";
 import { InferSelectModel, InferInsertModel } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { Coordinates } from "./validators";
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: "require" });
 
@@ -30,43 +28,34 @@ export const ShipsTable = pgTable("ships", {
   gameId: text("gameId").notNull(),
   playerId: text("playerId").notNull(),
   type: text("type").notNull(),
-  coordinates: json("coordinates").$type<Coordinates>().notNull(),
-});
-
-export const UsersTable = pgTable("profiles", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull(),
-  image: text("image").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  coordinates: json("coordinates").$type<any>().notNull(),
 });
 
 export const GamesTable = pgTable("games", {
-  id: text("id").primaryKey(),
-  player1Id: text("player1Id").notNull(),
-  player2Id: text("player2Id"),
-  status: text("status", { enum: ["waiting", "active", "finished"] })
-    .notNull()
-    .default("waiting"),
-  currentTurn: text("currentTurn"),
-  winnerId: text("winnerId"),
+  id: serial("id").primaryKey(),
+  player1Id: integer("player1Id"),
+  player2Id: integer("player2Id"),
+  status: text("status").notNull().default("waiting_setup"),
+  currentTurn: integer("currentTurn"),
+  winnerId: integer("winnerId"),
   gridSize: integer("gridSize").notNull().default(10),
   maxPlayers: integer("maxPlayers").notNull().default(2),
+  totalMoves: integer("totalMoves").notNull().default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 export const GamePlayersTable = pgTable("game_players", {
   id: serial("id").primaryKey(),
-  gameId: text("gameId").notNull(),
-  playerId: text("playerId").notNull(),
+  gameId: integer("gameId").notNull(),
+  playerId: integer("playerId").notNull(),
   joinOrder: integer("joinOrder").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export const ShotsTable = pgTable("shots", {
   id: serial("id").primaryKey(),
-  gameId: text("gameId").notNull(),
+  gameId: integer("gameId").notNull(),
   playerId: integer("playerId").notNull(),
   x: integer("x").notNull(),
   y: integer("y").notNull(),
@@ -75,12 +64,7 @@ export const ShotsTable = pgTable("shots", {
 });
 
 export type Ship = InferSelectModel<typeof ShipsTable>;
-export type NewShip = InferInsertModel<typeof ShipsTable>;
 export type Game = InferSelectModel<typeof GamesTable>;
-export type NewGame = InferInsertModel<typeof GamesTable>;
-export type User = InferSelectModel<typeof UsersTable>;
-export type NewUser = InferInsertModel<typeof UsersTable>;
 export type Player = InferSelectModel<typeof PlayersTable>;
-export type NewPlayer = InferInsertModel<typeof PlayersTable>;
 
 export const db = drizzle(sql);

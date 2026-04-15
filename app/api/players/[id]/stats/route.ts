@@ -10,8 +10,8 @@ export async function GET(
                 const { id } = await params;
                 const playerId = parseInt(id, 10);
 
-                if (isNaN(playerId)) {
-                        return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
+                if (isNaN(playerId) || playerId <= 0) {
+                        return NextResponse.json({ error: "Player not found" }, { status: 404 });
                 }
 
                 const [player] = await db
@@ -25,7 +25,10 @@ export async function GET(
 
                 const total_shots = player.totalShots;
                 const total_hits = player.totalHits;
-                const accuracy = total_shots > 0 ? parseFloat((total_hits / total_shots).toFixed(4)) : 0;
+                // accuracy must be a float (0.0 not 0)
+                const accuracy = total_shots > 0
+                        ? parseFloat((total_hits / total_shots).toFixed(4))
+                        : 0.0;
 
                 return NextResponse.json({
                         player_id: playerId,
