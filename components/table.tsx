@@ -1,4 +1,4 @@
-import { db, UsersTable } from '@/lib/drizzle'
+import { db, PlayersTable } from '@/lib/drizzle'
 import { timeAgo } from '@/lib/utils'
 import Image from 'next/image'
 import RefreshButton from './refresh-button'
@@ -8,7 +8,7 @@ export default async function Table() {
   let users
   let startTime = Date.now()
   try {
-    users = await db.select().from(UsersTable)
+    users = await db.select().from(PlayersTable)
   } catch (e: any) {
     if (e.message === `relation "profiles" does not exist`) {
       console.log(
@@ -17,7 +17,7 @@ export default async function Table() {
       // Table is not created yet
       await seed()
       startTime = Date.now()
-      users = await db.select().from(UsersTable)
+      users = await db.select().from(PlayersTable)
     } else {
       throw e
     }
