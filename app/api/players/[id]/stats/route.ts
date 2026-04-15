@@ -11,24 +11,18 @@ export async function GET(
                 const playerId = parseInt(id, 10);
 
                 if (isNaN(playerId) || playerId <= 0) {
-                        return NextResponse.json({ error: "Player not found" }, { status: 404 });
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
                 }
 
-                const [player] = await db
-                        .select()
-                        .from(PlayersTable)
-                        .where(eq(PlayersTable.id, playerId));
+                const [player] = await db.select().from(PlayersTable).where(eq(PlayersTable.id, playerId));
 
                 if (!player) {
-                        return NextResponse.json({ error: "Player not found" }, { status: 404 });
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
                 }
 
                 const total_shots = player.totalShots;
                 const total_hits = player.totalHits;
-                // accuracy must be a float (0.0 not 0)
-                const accuracy = total_shots > 0
-                        ? parseFloat((total_hits / total_shots).toFixed(4))
-                        : 0.0;
+                const accuracy = total_shots > 0 ? parseFloat((total_hits / total_shots).toFixed(4)) : 0.0;
 
                 return NextResponse.json({
                         player_id: playerId,
@@ -41,6 +35,6 @@ export async function GET(
                 });
         } catch (error) {
                 console.error("Player stats error:", error);
-                return NextResponse.json({ error: "Failed to get stats" }, { status: 500 });
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
         }
 }

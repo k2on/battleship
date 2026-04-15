@@ -11,13 +11,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const ships = await db.select()
                 .from(ShipsTable)
                 .where(and(
-                        eq(ShipsTable.playerId, playerId),
-                        eq(ShipsTable.gameId, gameId)
+                        eq(ShipsTable.playerId, parseInt(playerId)),
+                        eq(ShipsTable.gameId, parseInt(gameId))
 
                 ));
 
         return new Response(JSON.stringify(ships));
 }
+
 
 
 

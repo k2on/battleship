@@ -10,39 +10,29 @@ export async function POST(
         try {
                 const { id } = await params;
                 const gameId = parseInt(id, 10);
-
                 if (isNaN(gameId)) {
-                        return NextResponse.json({ error: "Game not found" }, { status: 404 });
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
                 }
 
                 const body = await request.json().catch(() => ({}));
-
-                const [game] = await db
-                        .select()
-                        .from(GamesTable)
-                        .where(eq(GamesTable.id, gameId));
-
+                const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
                 if (!game) {
-                        return NextResponse.json({ error: "Game not found" }, { status: 404 });
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
                 }
 
-                const playerId = body.player_id?.toString();
-                if (!playerId) {
-                        return NextResponse.json({ error: "Missing player_id" }, { status: 400 });
+                const playerId = typeof body.player_id === "number" ? body.player_id : parseInt(body.player_id, 10);
+                if (isNaN(playerId)) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
                 }
 
                 const ships = body.ships;
                 if (!Array.isArray(ships) || ships.length === 0) {
-                        return NextResponse.json({ error: "Ships required" }, { status: 400 });
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
                 }
 
-                const gameIdStr = gameId.toString();
+                // Delete existing (test mode allows overwrite)
+                await db.delete(ShipsTable).where(and(eq(ShipsTable.gameId, gameId), eq(ShipsTable.playerId, playerId)));
 
-                // Delete existing ships for this player (test mode allows overwrite)
-                await db.delete(ShipsTable)
-                        .where(and(eq(ShipsTable.gameId, gameIdStr), eq(ShipsTable.playerId, playerId)));
-
-                // Build ship rows
                 const shipRows = ships.map((ship: any, index: number) => {
                         let coordinates: any;
                         if (ship.coordinates) {
@@ -52,22 +42,14 @@ export async function POST(
                         } else {
                                 coordinates = [];
                         }
-
-                        return {
-                                id: randomUUID(),
-                                gameId: gameIdStr,
-                                playerId: playerId,
-                                type: ship.type ?? `ship_${index + 1}`,
-                                coordinates,
-                        };
+                        return { id: randomUUID(), gameId, playerId, type: ship.type ?? `ship_${index + 1}`, coordinates };
                 });
 
                 await db.insert(ShipsTable).values(shipRows);
-
-                return NextResponse.json({ message: "Ships placed successfully (test mode)" }, { status: 200 });
+                return NextResponse.json({ message: "Ships placed (test mode)" }, { status: 200 });
         } catch (error) {
-                console.error("Test place ships error:", error);
-                return NextResponse.json({ error: "Failed to place ships" }, { status: 500 });
+                console.error("Test ships error:", error);
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
         }
 }
 
@@ -78,28 +60,16 @@ export async function GET(
         try {
                 const { id } = await params;
                 const gameId = parseInt(id, 10);
-
                 if (isNaN(gameId)) {
-                        return NextResponse.json({ error: "Game not found" }, { status: 404 });
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
                 }
-
-                const [game] = await db
-                        .select()
-                        .from(GamesTable)
-                        .where(eq(GamesTable.id, gameId));
-
+                const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
                 if (!game) {
-                        return NextResponse.json({ error: "Game not found" }, { status: 404 });
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
                 }
-
-                const ships = await db
-                        .select()
-                        .from(ShipsTable)
-                        .where(eq(ShipsTable.gameId, gameId.toString()));
-
-                return NextResponse.json({ game_id: gameId, ships }, { status: 200 });
+                const ships = await db.select().from(ShipsTable).where(eq(ShipsTable.gameId, gameId));
+                return NextResponse.json({ game_id: gameId, ships });
         } catch (error) {
-                console.error("Test get ships error:", error);
-                return NextResponse.json({ error: "Failed to get ships" }, { status: 500 });
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
         }
 }

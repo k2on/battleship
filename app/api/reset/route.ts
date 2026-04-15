@@ -1,3 +1,4 @@
+// app/api/reset/route.ts
 import { db, GamesTable, ShipsTable, PlayersTable, ShotsTable, GamePlayersTable } from "@/lib/drizzle";
 import { NextResponse } from "next/server";
 
@@ -8,10 +9,8 @@ export async function POST() {
                 await db.delete(GamePlayersTable);
                 await db.delete(GamesTable);
                 await db.delete(PlayersTable);
-
                 return NextResponse.json({ status: "ok" }, { status: 200 });
         } catch (error) {
-                console.error("Reset error:", error);
-                return NextResponse.json({ error: "Failed to reset" }, { status: 500 });
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
         }
 }
