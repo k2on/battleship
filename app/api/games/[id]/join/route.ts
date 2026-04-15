@@ -48,11 +48,16 @@ export async function POST(
                         return NextResponse.json({ error: "bad_request" }, { status: 400 });
                 }
 
+                const joinOrder = gamePlayers.length + 1;
+
                 await db.insert(GamePlayersTable).values({
-                        gameId, playerId, joinOrder: gamePlayers.length + 1,
+                        gameId, playerId, joinOrder,
                 });
 
-                if (gamePlayers.length === 1) {
+                // Update GamesTable player slots
+                if (joinOrder === 1) {
+                        await db.update(GamesTable).set({ player1Id: playerId, updatedAt: new Date() }).where(eq(GamesTable.id, gameId));
+                } else if (joinOrder === 2) {
                         await db.update(GamesTable).set({ player2Id: playerId, updatedAt: new Date() }).where(eq(GamesTable.id, gameId));
                 }
 

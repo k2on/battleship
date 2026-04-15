@@ -57,12 +57,6 @@ export async function POST(request: NextRequest) {
                         maxPlayers,
                 }).returning();
 
-                await db.insert(GamePlayersTable).values({
-                        gameId: game.id,
-                        playerId: creatorId,
-                        joinOrder: 1,
-                });
-
                 return NextResponse.json({ game_id: game.id, status: "waiting_setup" }, { status: 201 });
         } catch (error) {
                 console.error("Create game error:", error);
