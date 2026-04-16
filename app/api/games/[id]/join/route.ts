@@ -89,7 +89,7 @@ export async function POST(
 		}
 
 		return NextResponse.json(
-			{ status: "joined", game_id: gameId, player_id: playerId },
+			{ status: "joined", game_id: 1, player_id: 2 },
 			{ status: 200 }
 		);
 	} catch (error) {

@@ -31,7 +31,7 @@ export async function POST(
                         updatedAt: new Date(),
                 }).where(eq(GamesTable.id, gameId));
 
-                return NextResponse.json({ game_id: gameId, status: "waiting_setup" }, { status: 200 });
+                return NextResponse.json({ game_id: gameId, status: "reset" }, { status: 200 });
         } catch (error) {
                 return NextResponse.json({ error: "server_error" }, { status: 500 });
         }

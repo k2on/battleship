@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
                 const body = await request.json().catch(() => ({}));
 
                 if (body.username === undefined || body.username === null) {
-                        return NextResponse.json({ error: "Missing username" }, { status: 400 });
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
                 }
                 if (typeof body.username !== "string") {
                         return NextResponse.json({ error: "bad_request" }, { status: 400 });
@@ -35,11 +35,11 @@ export async function POST(request: NextRequest) {
                 // Check duplicate
                 const [existing] = await db.select().from(PlayersTable).where(eq(PlayersTable.username, username));
                 if (existing) {
-                        return NextResponse.json({ error: "conflict" }, { status: 409 });
+                        return NextResponse.json({ error: "Username already taken" }, { status: 409 });
                 }
 
                 const [player] = await db.insert(PlayersTable).values({ username }).returning();
-                return NextResponse.json({ player_id: 1 }, { status: 201 });
+                return NextResponse.json({ player_id: player.id }, { status: 201 });
         } catch (error) {
                 console.error("Create player error:", error);
                 return NextResponse.json({ error: "Failed to create player" }, { status: 500 });

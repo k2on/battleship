@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
                         return NextResponse.json({ error: "bad_request" }, { status: 400 });
                 }
                 if (gridSize < 5 || gridSize > 15) {
-                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                        return NextResponse.json({ error: "grid_size must be between 5 and 15" }, { status: 400 });
                 }
                 if (maxPlayers < 2) {
                         return NextResponse.json({ error: "bad_request" }, { status: 400 });
