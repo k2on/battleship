@@ -1,14 +1,18 @@
 // app/api/reset/route.ts
-import { db, GamesTable, ShipsTable, PlayersTable, ShotsTable, GamePlayersTable } from "@/lib/drizzle";
+import { db } from "@/lib/drizzle";
 import { NextResponse } from "next/server";
 
 export async function POST() {
         try {
-                await db.delete(ShotsTable);
-                await db.delete(ShipsTable);
-                await db.delete(GamePlayersTable);
-                await db.delete(GamesTable);
-                await db.delete(PlayersTable);
+                await db.execute(`
+                      TRUNCATE TABLE
+                        shots,
+                        ships,
+                        game_players,
+                        games,
+                        players
+                      RESTART IDENTITY CASCADE;
+                `);
                 return NextResponse.json({ status: "ok" }, { status: 200 });
         } catch (error) {
                 return NextResponse.json({ error: "server_error" }, { status: 500 });
