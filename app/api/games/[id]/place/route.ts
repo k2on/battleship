@@ -86,11 +86,11 @@ export async function POST(
 
                         for (const c of coords) {
                                 if (c.row < 0 || c.col < 0 || c.row >= gridSize || c.col >= gridSize) {
-                                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                                        return NextResponse.json({ error: "Invalid ship coordinates" }, { status: 400 });
                                 }
                                 const key = `${c.row},${c.col}`;
                                 if (allCoords.includes(key)) {
-                                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                                        return NextResponse.json({ error: "Invalid ship coordinates" }, { status: 400 });
                                 }
                                 allCoords.push(key);
                         }
@@ -125,7 +125,7 @@ export async function POST(
                         }).where(eq(GamesTable.id, gameId));
                 }
 
-                return NextResponse.json({ status: "placed", game_id: gameId, player_id: playerId }, { status: 200 });
+                return NextResponse.json({ status: true, game_id: gameId, player_id: playerId }, { status: 200 });
         } catch (error) {
                 console.error("Place ships error:", error);
                 return NextResponse.json({ error: "server_error" }, { status: 500 });
