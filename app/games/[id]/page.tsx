@@ -408,9 +408,29 @@ function FirePhase({ gameId, playerId, game, moves, onMoveComplete }: FirePhaseP
   const [firing, setFiring] = useState(false);
   const [lastResult, setLastResult] = useState<{ result: "hit" | "miss"; row: number; col: number } | null>(null);
   const [error, setError] = useState("");
+  const [myShipCells, setMyShipCells] = useState<Set<string>>(new Set());
 
   const isMyTurn = game.current_turn_player_id === playerId;
   const opponentId = game.players.find((p) => p !== playerId);
+
+  // Fetch my ship positions from the board endpoint
+  useEffect(() => {
+    fetchJson<{ ships: Array<{ coordinates: any[] }> }>(
+      `/api/test/games/${gameId}/board/${playerId}`
+    )
+      .then(({ ships }) => {
+        const cells = new Set<string>();
+        for (const ship of ships) {
+          for (const coord of ship.coordinates) {
+            const r = coord.row ?? coord[0];
+            const c = coord.col ?? coord[1];
+            cells.add(`${r},${c}`);
+          }
+        }
+        setMyShipCells(cells);
+      })
+      .catch(() => {});
+  }, [gameId, playerId]);
 
   // Build attack grid: what I've fired at (opponent's board from my perspective)
   const attackGrid = buildEmptyGrid(game.grid_size);
@@ -420,8 +440,14 @@ function FirePhase({ gameId, playerId, game, moves, onMoveComplete }: FirePhaseP
       attackGrid[m.row][m.col] = m.result === "hit" ? "hit" : "miss";
     });
 
-  // Build defense grid: what opponent fired at me
+  // Build defense grid: my ships + what opponent has fired at me
   const defenseGrid = buildEmptyGrid(game.grid_size);
+  // First, paint my ships
+  myShipCells.forEach((key) => {
+    const [r, c] = key.split(",").map(Number);
+    defenseGrid[r][c] = "ship";
+  });
+  // Then overlay incoming shots (hit/miss on top of ship/empty)
   moves
     .filter((m) => m.player_id !== playerId)
     .forEach((m) => {
@@ -499,7 +525,8 @@ function FirePhase({ gameId, playerId, game, moves, onMoveComplete }: FirePhaseP
 
       {error && <p className="text-xs text-red-600">{error}</p>}
 
-      <div className="flex gap-4 text-xs text-slate-500">
+      <div className="flex gap-4 text-xs text-slate-500 flex-wrap">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 bg-slate-400 rounded-sm inline-block" /> Your ship</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 bg-red-400 rounded-sm inline-block" /> Hit</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-200 rounded-sm inline-block" /> Miss</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-50 border border-blue-200 rounded-sm inline-block" /> Unknown</span>
