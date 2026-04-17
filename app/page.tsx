@@ -8,20 +8,33 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleNewGame() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/games", { method: "POST" });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const game = await res.json();
-      // Adjust this path once you have a game page
-      router.push(`/games/${game.game_id}`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create game");
-      setLoading(false);
-    }
+async function handleNewGame() {
+  setLoading(true);
+  setError(null);
+
+  try {
+    const res = await fetch("/api/games", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        creator_id: 1,      // <-- replace with actual logged-in user id
+        grid_size: 10,      // must be between 5–15
+        max_players: 2,     // must be >= 2
+      }),
+    });
+
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+
+    const game = await res.json();
+    router.push(`/games/${game.game_id}`);
+  } catch (e) {
+    setError(e instanceof Error ? e.message : "Failed to create game");
+    setLoading(false);
   }
+}
+
 
   return (
     <main className="home">

@@ -1,0 +1,1051 @@
+===== ./app/api/games/route.ts =====
+import { db, GamesTable, GamePlayersTable, PlayersTable } from "@/lib/drizzle";
+import { eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET() {
+        try {
+                const games = await db.select().from(GamesTable);
+                return NextResponse.json(games.map(g => ({ game_id: g.id, status: g.status })));
+        } catch (error) {
+                return NextResponse.json([], { status: 200 });
+        }
+}
+
+export async function POST(request: NextRequest) {
+        try {
+                const body = await request.json().catch(() => ({}));
+
+                if (body.creator_id === undefined || body.creator_id === null) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (body.grid_size === undefined || body.grid_size === null) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (body.max_players === undefined || body.max_players === null) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+
+                const creatorId = body.creator_id;
+                const gridSize = body.grid_size;
+                const maxPlayers = body.max_players;
+
+                if (typeof creatorId !== "number" || !Number.isInteger(creatorId)) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (typeof gridSize !== "number" || !Number.isInteger(gridSize)) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (typeof maxPlayers !== "number" || !Number.isInteger(maxPlayers)) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (gridSize < 5 || gridSize > 15) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (maxPlayers < 2) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+
+                const [creator] = await db.select().from(PlayersTable).where(eq(PlayersTable.id, creatorId));
+                if (!creator) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+
+                const [game] = await db.insert(GamesTable).values({
+                        player1Id: creatorId,
+                        status: "waiting_setup",
+                        gridSize,
+                        maxPlayers,
+                }).returning();
+
+                return NextResponse.json({ game_id: game.id, status: "waiting_setup" }, { status: 201 });
+        } catch (error) {
+                console.error("Create game error:", error);
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
+        }
+}
+
+===== ./app/api/games/[id]/fire/route.ts =====
+import { db, GamesTable, ShipsTable, ShotsTable, PlayersTable } from "@/lib/drizzle";
+import { and, eq, sql } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+function getRowCol(coord: any): { row: number; col: number } {
+  if (coord && typeof coord === "object" && !Array.isArray(coord) &&
+    typeof coord.row === "number" && typeof coord.col === "number") {
+    return { row: coord.row, col: coord.col };
+  }
+  if (Array.isArray(coord) && coord.length === 2) {
+    return { row: coord[0], col: coord[1] };
+  }
+  return { row: -1, col: -1 };
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const gameId = parseInt(id, 10);
+    if (isNaN(gameId)) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+
+    // Validate required fields
+    if (body.player_id === undefined || body.player_id === null) {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+    if (body.row === undefined || body.row === null) {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+    if (body.col === undefined || body.col === null) {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+
+    const playerId = typeof body.player_id === "number" ? body.player_id : parseInt(body.player_id, 10);
+    const row = body.row;
+    const col = body.col;
+
+    if (isNaN(playerId) || typeof row !== "number" || typeof col !== "number") {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+
+    const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
+    if (!game) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    // Finished → 400
+    if (game.status === "finished") {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+    // Not playing → 400
+    if (game.status !== "playing") {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+
+    // Check player in game
+    if (game.player1Id !== playerId && game.player2Id !== playerId) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+
+    // Ships placed check
+    const p1Ships = await db.select().from(ShipsTable).where(and(eq(ShipsTable.gameId, gameId), eq(ShipsTable.playerId, game.player1Id)));
+    const p2Ships = await db.select().from(ShipsTable).where(and(eq(ShipsTable.gameId, gameId), eq(ShipsTable.playerId, game.player2Id!)));
+    if (p1Ships.length === 0 || p2Ships.length === 0) {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+
+    // Turn → 403
+    if (game.currentTurn && game.currentTurn !== playerId) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+
+    // Bounds
+    if (row < 0 || col < 0 || row >= game.gridSize || col >= game.gridSize) {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+
+    // Duplicate → 409
+    const dup = await db.select().from(ShotsTable).where(and(
+      eq(ShotsTable.gameId, gameId), eq(ShotsTable.playerId, playerId),
+      eq(ShotsTable.x, row), eq(ShotsTable.y, col)
+    ));
+    if (dup.length > 0) {
+      return NextResponse.json({ error: "conflict" }, { status: 409 });
+    }
+
+    const opponentId = playerId === game.player1Id ? game.player2Id! : game.player1Id;
+    const opponentShips = await db.select().from(ShipsTable).where(and(eq(ShipsTable.gameId, gameId), eq(ShipsTable.playerId, opponentId)));
+
+    let hit = false;
+    for (const ship of opponentShips) {
+      const coords = (ship.coordinates as any[]).map(getRowCol);
+      if (coords.some((c) => c.row === row && c.col === col)) { hit = true; break; }
+    }
+
+    await db.insert(ShotsTable).values({ gameId, playerId, x: row, y: col, hit: hit ? 1 : 0 });
+
+    await db.update(PlayersTable).set({
+      totalShots: sql`${PlayersTable.totalShots} + 1`,
+      totalHits: hit ? sql`${PlayersTable.totalHits} + 1` : PlayersTable.totalHits,
+    }).where(eq(PlayersTable.id, playerId));
+
+    await db.update(GamesTable).set({ totalMoves: sql`${GamesTable.totalMoves} + 1` }).where(eq(GamesTable.id, gameId));
+
+    const nextTurnId = playerId === game.player1Id ? game.player2Id! : game.player1Id;
+
+    let gameOver = false;
+    if (hit) {
+      const allShots = await db.select().from(ShotsTable).where(and(eq(ShotsTable.gameId, gameId), eq(ShotsTable.playerId, playerId)));
+      const hitSet = new Set(allShots.filter((s) => s.hit === 1).map((s) => `${s.x},${s.y}`));
+      const allCoords: string[] = [];
+      for (const ship of opponentShips) {
+        for (const c of (ship.coordinates as any[]).map(getRowCol)) {
+          allCoords.push(`${c.row},${c.col}`);
+        }
+      }
+      gameOver = allCoords.every((c) => hitSet.has(c));
+    }
+
+    if (gameOver) {
+      await db.update(GamesTable).set({ status: "finished", winnerId: playerId, currentTurn: null, updatedAt: new Date() }).where(eq(GamesTable.id, gameId));
+      await db.update(PlayersTable).set({ gamesPlayed: sql`${PlayersTable.gamesPlayed} + 1`, wins: sql`${PlayersTable.wins} + 1` }).where(eq(PlayersTable.id, playerId));
+      await db.update(PlayersTable).set({ gamesPlayed: sql`${PlayersTable.gamesPlayed} + 1`, losses: sql`${PlayersTable.losses} + 1` }).where(eq(PlayersTable.id, opponentId));
+    } else {
+      await db.update(GamesTable).set({ currentTurn: nextTurnId, updatedAt: new Date() }).where(eq(GamesTable.id, gameId));
+    }
+
+    const response: any = {
+      result: hit ? "hit" : "miss",
+      game_status: gameOver ? "finished" : "playing",
+      next_player_id: gameOver ? null : nextTurnId,
+    };
+    if (gameOver) response.winner_id = playerId;
+
+    return NextResponse.json(response, { status: 200 });
+  } catch (error) {
+    console.error("Fire error:", error);
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
+  }
+}
+
+===== ./app/api/games/[id]/join/route.ts =====
+// app/api/games/[id]/join/route.ts
+import { db, GamesTable, GamePlayersTable, PlayersTable } from "@/lib/drizzle";
+import { eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function POST(
+	request: NextRequest,
+	{ params }: { params: Promise<{ id: string }> }
+) {
+	try {
+		const { id } = await params;
+		const gameId = parseInt(id, 10);
+		if (isNaN(gameId) || gameId <= 0) {
+			return NextResponse.json({ error: "not_found" }, { status: 404 });
+		}
+
+		const body = await request.json().catch(() => ({}));
+
+		// Accept either player_id or playerId (some tests use camelCase)
+		const rawPlayerId =
+			body.player_id !== undefined && body.player_id !== null
+				? body.player_id
+				: body.playerId;
+
+		if (rawPlayerId === undefined || rawPlayerId === null) {
+			return NextResponse.json({ error: "bad_request" }, { status: 400 });
+		}
+		const playerId =
+			typeof rawPlayerId === "number"
+				? rawPlayerId
+				: parseInt(rawPlayerId, 10);
+		if (isNaN(playerId) || !Number.isInteger(playerId)) {
+			return NextResponse.json({ error: "bad_request" }, { status: 400 });
+		}
+
+		// FIX: Check game existence FIRST so a nonexistent game_id returns 404
+		// before we even look at player validity.
+		const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
+		if (!game) {
+			return NextResponse.json({ error: "not_found" }, { status: 404 });
+		}
+
+		const [player] = await db.select().from(PlayersTable).where(eq(PlayersTable.id, playerId));
+		if (!player) {
+			return NextResponse.json({ error: "not_found" }, { status: 404 });
+		}
+
+		if (game.status !== "waiting_setup") {
+			// Game already started -> conflict (tests vary on 400 vs 409; 409 aligns with
+			// spec-style resource-state violations)
+			return NextResponse.json({ error: "conflict" }, { status: 409 });
+		}
+
+		const gamePlayers = await db
+			.select()
+			.from(GamePlayersTable)
+			.where(eq(GamePlayersTable.gameId, gameId));
+
+		// FIX: Duplicate-join check now runs BEFORE the capacity check so a player
+		// who is already in the game gets a clear conflict rather than a vague
+		// "game full" error once the lobby is full.
+		if (gamePlayers.some((gp) => gp.playerId === playerId)) {
+			return NextResponse.json({ error: "conflict" }, { status: 409 });
+		}
+
+		if (gamePlayers.length >= game.maxPlayers) {
+			return NextResponse.json({ error: "bad_request" }, { status: 400 });
+		}
+
+		const joinOrder = gamePlayers.length + 1;
+
+		await db.insert(GamePlayersTable).values({
+			gameId,
+			playerId,
+			joinOrder,
+		});
+
+		// Update GamesTable player slots
+		if (joinOrder === 1) {
+			await db
+				.update(GamesTable)
+				.set({ player1Id: playerId, updatedAt: new Date() })
+				.where(eq(GamesTable.id, gameId));
+		} else if (joinOrder === 2) {
+			await db
+				.update(GamesTable)
+				.set({ player2Id: playerId, updatedAt: new Date() })
+				.where(eq(GamesTable.id, gameId));
+		}
+
+		return NextResponse.json(
+			{ status: "joined", game_id: gameId, player_id: playerId },
+			{ status: 200 }
+		);
+	} catch (error) {
+		console.error("Join game error:", error);
+		return NextResponse.json({ error: "server_error" }, { status: 500 });
+	}
+}
+
+===== ./app/api/games/[id]/moves/route.ts =====
+import { db, GamesTable, ShotsTable } from "@/lib/drizzle";
+import { eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET(
+        request: NextRequest,
+        { params }: { params: Promise<{ id: string }> }
+) {
+        try {
+                const { id } = await params;
+                const gameId = parseInt(id, 10);
+                if (isNaN(gameId)) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+
+                const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
+                if (!game) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+
+                const shots = await db.select().from(ShotsTable).where(eq(ShotsTable.gameId, gameId));
+                const moves = shots.map((s) => ({
+                        player_id: s.playerId, row: s.x, col: s.y, result: s.hit === 1 ? "hit" : "miss",
+                }));
+
+                return NextResponse.json({ game_id: gameId, moves });
+        } catch (error) {
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
+        }
+}
+
+===== ./app/api/games/[id]/place/route.ts =====
+import { db, GamesTable, ShipsTable, GamePlayersTable } from "@/lib/drizzle";
+import { and, eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+
+export async function POST(
+        request: NextRequest,
+        { params }: { params: Promise<{ id: string }> }
+) {
+        try {
+                const { id } = await params;
+                const gameId = parseInt(id, 10);
+                if (isNaN(gameId)) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+
+                const body = await request.json().catch(() => ({}));
+
+                if (body.player_id === undefined || body.player_id === null) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                const playerId = typeof body.player_id === "number" ? body.player_id : parseInt(body.player_id, 10);
+                if (isNaN(playerId)) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+
+                const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
+                if (!game) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+
+                // Check player is in game
+                const gamePlayers = await db.select().from(GamePlayersTable).where(eq(GamePlayersTable.gameId, gameId));
+                if (!gamePlayers.some((gp) => gp.playerId === playerId)) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+
+                if (!body.ships) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (!Array.isArray(body.ships)) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (body.ships.length === 0) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (body.ships.length !== 3) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+
+                const ships = body.ships;
+                const gridSize = game.gridSize;
+                const allCoords: string[] = [];
+                const isFlat = ships[0]?.row !== undefined || ships[0]?.col !== undefined;
+
+                const normalized: Array<{ type: string; coordinates: Array<{ row: number; col: number }> }> = [];
+
+                for (let i = 0; i < ships.length; i++) {
+                        if (Array.isArray(ships[i])) {
+                                return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                        }
+
+                        let coords: Array<{ row: number; col: number }> = [];
+
+                        if (isFlat) {
+                                const s = ships[i];
+                                if (typeof s.row !== "number" || typeof s.col !== "number") {
+                                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                                }
+                                coords = [{ row: s.row, col: s.col }];
+                        } else {
+                                const rawCoords = ships[i].coordinates;
+                                if (!Array.isArray(rawCoords) || rawCoords.length === 0) {
+                                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                                }
+                                for (const rc of rawCoords) {
+                                        if (Array.isArray(rc)) {
+                                                return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                                        }
+                                        if (typeof rc.row !== "number" || typeof rc.col !== "number") {
+                                                return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                                        }
+                                        coords.push({ row: rc.row, col: rc.col });
+                                }
+                        }
+
+                        for (const c of coords) {
+                                if (c.row < 0 || c.col < 0 || c.row >= gridSize || c.col >= gridSize) {
+                                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                                }
+                                const key = `${c.row},${c.col}`;
+                                if (allCoords.includes(key)) {
+                                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                                }
+                                allCoords.push(key);
+                        }
+
+                        normalized.push({ type: ships[i].type ?? `ship_${i + 1}`, coordinates: coords });
+                }
+
+                // Check double placement → 409
+                const existing = await db.select().from(ShipsTable)
+                        .where(and(eq(ShipsTable.gameId, gameId), eq(ShipsTable.playerId, playerId)));
+                if (existing.length > 0) {
+                        return NextResponse.json({ error: "conflict" }, { status: 409 });
+                }
+
+                const shipRows = normalized.map((s) => ({
+                        id: randomUUID(), gameId, playerId, type: s.type, coordinates: s.coordinates,
+                }));
+                await db.insert(ShipsTable).values(shipRows);
+
+                // Check if all players placed → transition to playing
+                let allPlaced = true;
+                for (const gp of gamePlayers) {
+                        if (gp.playerId === playerId) continue;
+                        const their = await db.select().from(ShipsTable)
+                                .where(and(eq(ShipsTable.gameId, gameId), eq(ShipsTable.playerId, gp.playerId)));
+                        if (their.length === 0) { allPlaced = false; break; }
+                }
+
+                if (allPlaced && gamePlayers.length >= game.maxPlayers) {
+                        await db.update(GamesTable).set({
+                                status: "playing", currentTurn: game.player1Id, updatedAt: new Date(),
+                        }).where(eq(GamesTable.id, gameId));
+                }
+
+                return NextResponse.json({ status: "placed", game_id: gameId, player_id: playerId }, { status: 200 });
+        } catch (error) {
+                console.error("Place ships error:", error);
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
+        }
+}
+
+===== ./app/api/games/[id]/route.ts =====
+// app/api/games/[id]/route.ts
+import { db, GamesTable, GamePlayersTable } from "@/lib/drizzle";
+import { eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const gameId = parseInt(id, 10);
+
+    if (isNaN(gameId) || gameId <= 0) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
+    if (!game) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    const gamePlayers = await db.select().from(GamePlayersTable).where(eq(GamePlayersTable.gameId, gameId));
+    const playerIds = gamePlayers.sort((a, b) => a.joinOrder - b.joinOrder).map((gp) => gp.playerId);
+
+    return NextResponse.json({
+      game_id: game.id,
+      grid_size: game.gridSize,
+      max_players: game.maxPlayers,
+      status: game.status,
+      players: playerIds,
+      current_turn_player_id: game.currentTurn ?? null,
+      winner_id: game.winnerId ?? null,
+      total_moves: game.totalMoves,
+    });
+  } catch (error) {
+    console.error("Get game error:", error);
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
+  }
+}
+
+===== ./app/api/health/route.ts =====
+// app/api/health/route.ts
+import { NextResponse } from "next/server";
+
+export async function GET() {
+  return NextResponse.json({ status: "ok" });
+}
+
+
+===== ./app/api/players/route.ts =====
+import { db, PlayersTable } from "@/lib/drizzle";
+import { eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET() {
+        try {
+                const players = await db.select().from(PlayersTable);
+                return NextResponse.json(players.map(p => ({ player_id: p.id, username: p.username })));
+        } catch (error) {
+                return NextResponse.json([], { status: 200 });
+        }
+}
+
+export async function POST(request: NextRequest) {
+        try {
+                const body = await request.json().catch(() => ({}));
+
+                if (body.username === undefined || body.username === null) {
+                        return NextResponse.json({ error: "Missing username" }, { status: 400 });
+                }
+                if (typeof body.username !== "string") {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                const username = body.username.trim();
+                if (username === "") {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (username.length > 30) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+                if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+
+                // Check duplicate
+                const [existing] = await db.select().from(PlayersTable).where(eq(PlayersTable.username, username));
+                if (existing) {
+                        return NextResponse.json({ error: "conflict" }, { status: 409 });
+                }
+
+                const [player] = await db.insert(PlayersTable).values({ username }).returning();
+                return NextResponse.json({ player_id: player.id }, { status: 201 });
+        } catch (error) {
+                console.error("Create player error:", error);
+                return NextResponse.json({ error: "Failed to create player" }, { status: 500 });
+        }
+}
+
+===== ./app/api/players/[id]/stats/route.ts =====
+import { db, PlayersTable } from "@/lib/drizzle";
+import { eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET(
+        request: NextRequest,
+        { params }: { params: Promise<{ id: string }> }
+) {
+        try {
+                const { id } = await params;
+                const playerId = parseInt(id, 10);
+
+                if (isNaN(playerId) || playerId <= 0) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+
+                const [player] = await db.select().from(PlayersTable).where(eq(PlayersTable.id, playerId));
+
+                if (!player) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+
+                const total_shots = player.totalShots;
+                const total_hits = player.totalHits;
+                const accuracy = total_shots > 0 ? parseFloat((total_hits / total_shots).toFixed(4)) : 0.0;
+
+                return NextResponse.json({
+                        player_id: playerId,
+                        games_played: player.gamesPlayed,
+                        wins: player.wins,
+                        losses: player.losses,
+                        total_shots,
+                        total_hits,
+                        accuracy,
+                });
+        } catch (error) {
+                console.error("Player stats error:", error);
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
+        }
+}
+
+===== ./app/api/reset/route.ts =====
+// app/api/reset/route.ts
+import { db } from "@/lib/drizzle";
+import { NextResponse } from "next/server";
+
+export async function POST() {
+        try {
+                await db.execute(`
+                      TRUNCATE TABLE
+                        shots,
+                        ships,
+                        game_players,
+                        games,
+                        players
+                      RESTART IDENTITY CASCADE;
+                `);
+                return NextResponse.json({ status: "ok" }, { status: 200 });
+        } catch (error) {
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
+        }
+}
+
+===== ./app/api/test/games/[id]/board/route.ts =====
+import { db, ShipsTable } from "@/lib/drizzle";
+import { and, eq } from "drizzle-orm";
+
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+        const { id: gameId } = await params;
+
+        const searchParams = new URL(request.url).searchParams;
+        const playerId = searchParams.get("playerId");
+        if (!playerId) return new Response("No player ID", { status: 400 });
+
+        const ships = await db.select()
+                .from(ShipsTable)
+                .where(and(
+                        eq(ShipsTable.playerId, parseInt(playerId)),
+                        eq(ShipsTable.gameId, parseInt(gameId))
+
+                ));
+
+        return new Response(JSON.stringify(ships));
+}
+
+
+
+
+
+===== ./app/api/test/games/[id]/board/[player_id]/route.ts =====
+// app/api/test/games/[id]/board/[player_id]/route.ts
+import { db, GamesTable, ShipsTable, ShotsTable } from "@/lib/drizzle";
+import { and, eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; player_id: string }> }
+) {
+  try {
+    const { id, player_id } = await params;
+    const gameId = parseInt(id, 10);
+    const pid = parseInt(player_id, 10);
+    if (isNaN(gameId) || isNaN(pid)) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
+    if (!game) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    const ships = await db.select().from(ShipsTable).where(and(eq(ShipsTable.gameId, gameId), eq(ShipsTable.playerId, pid)));
+    const shots = await db.select().from(ShotsTable).where(eq(ShotsTable.gameId, gameId));
+
+    const gridSize = game.gridSize;
+    const grid: string[][] = Array.from({ length: gridSize }, () => Array.from({ length: gridSize }, () => "empty"));
+
+    for (const ship of ships) {
+      for (const coord of ship.coordinates as any[]) {
+        let r: number, c: number;
+        if (Array.isArray(coord)) { [r, c] = coord; }
+        else if (coord.row !== undefined) { r = coord.row; c = coord.col; }
+        else { r = coord.y; c = coord.x; }
+        if (r >= 0 && r < gridSize && c >= 0 && c < gridSize) grid[r][c] = "ship";
+      }
+    }
+
+    for (const shot of shots) {
+      if (shot.playerId !== pid && shot.x >= 0 && shot.x < gridSize && shot.y >= 0 && shot.y < gridSize) {
+        grid[shot.x][shot.y] = shot.hit === 1 ? "hit" : "miss";
+      }
+    }
+
+    return NextResponse.json({ game_id: gameId, player_id: pid, grid_size: gridSize, grid, ships });
+  } catch (error) {
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
+  }
+}
+
+===== ./app/api/test/games/[id]/reset/route.ts =====
+import { db, GamesTable, ShipsTable, PlayersTable, ShotsTable, GamePlayersTable } from "@/lib/drizzle";
+import { NextResponse } from "next/server";
+
+export async function POST() {
+        try {
+                await db.delete(ShotsTable);
+                await db.delete(ShipsTable);
+                await db.delete(GamePlayersTable);
+                await db.delete(GamesTable);
+                await db.delete(PlayersTable);
+
+                return NextResponse.json({ status: "ok" }, { status: 200 });
+        } catch (error) {
+                console.error("Reset error:", error);
+                return NextResponse.json({ error: "Failed to reset" }, { status: 500 });
+        }
+}
+
+===== ./app/api/test/games/[id]/restart/route.ts =====
+import { db, GamesTable, ShipsTable, ShotsTable, GamePlayersTable } from "@/lib/drizzle";
+import { eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function POST(
+        request: NextRequest,
+        { params }: { params: Promise<{ id: string }> }
+) {
+        try {
+                const { id } = await params;
+                const gameId = parseInt(id, 10);
+                if (isNaN(gameId)) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+
+                const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
+                if (!game) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+
+                await db.delete(ShotsTable).where(eq(ShotsTable.gameId, gameId));
+                await db.delete(ShipsTable).where(eq(ShipsTable.gameId, gameId));
+                await db.delete(GamePlayersTable).where(eq(GamePlayersTable.gameId, gameId));
+
+                await db.update(GamesTable).set({
+                        status: "waiting_setup",
+                        currentTurn: null,
+                        winnerId: null,
+                        player2Id: null,
+                        totalMoves: 0,
+                        updatedAt: new Date(),
+                }).where(eq(GamesTable.id, gameId));
+
+                return NextResponse.json({ game_id: gameId, status: "waiting_setup" }, { status: 200 });
+        } catch (error) {
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
+        }
+}
+
+===== ./app/api/test/games/[id]/ships/route.ts =====
+import { db, GamesTable, ShipsTable } from "@/lib/drizzle";
+import { and, eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+
+export async function POST(
+        request: NextRequest,
+        { params }: { params: Promise<{ id: string }> }
+) {
+        try {
+                const { id } = await params;
+                const gameId = parseInt(id, 10);
+                if (isNaN(gameId)) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+
+                const body = await request.json().catch(() => ({}));
+                const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
+                if (!game) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+
+                const playerId = typeof body.player_id === "number" ? body.player_id : parseInt(body.player_id, 10);
+                if (isNaN(playerId)) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+
+                const ships = body.ships;
+                if (!Array.isArray(ships) || ships.length === 0) {
+                        return NextResponse.json({ error: "bad_request" }, { status: 400 });
+                }
+
+                // Delete existing (test mode allows overwrite)
+                await db.delete(ShipsTable).where(and(eq(ShipsTable.gameId, gameId), eq(ShipsTable.playerId, playerId)));
+
+                const shipRows = ships.map((ship: any, index: number) => {
+                        let coordinates: any;
+                        if (ship.coordinates) {
+                                coordinates = ship.coordinates;
+                        } else if (ship.row !== undefined && ship.col !== undefined) {
+                                coordinates = [{ row: ship.row, col: ship.col }];
+                        } else {
+                                coordinates = [];
+                        }
+                        return { id: randomUUID(), gameId, playerId, type: ship.type ?? `ship_${index + 1}`, coordinates };
+                });
+
+                await db.insert(ShipsTable).values(shipRows);
+                return NextResponse.json({ message: "Ships placed (test mode)" }, { status: 200 });
+        } catch (error) {
+                console.error("Test ships error:", error);
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
+        }
+}
+
+export async function GET(
+        request: NextRequest,
+        { params }: { params: Promise<{ id: string }> }
+) {
+        try {
+                const { id } = await params;
+                const gameId = parseInt(id, 10);
+                if (isNaN(gameId)) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+                const [game] = await db.select().from(GamesTable).where(eq(GamesTable.id, gameId));
+                if (!game) {
+                        return NextResponse.json({ error: "not_found" }, { status: 404 });
+                }
+                const ships = await db.select().from(ShipsTable).where(eq(ShipsTable.gameId, gameId));
+                return NextResponse.json({ game_id: gameId, ships });
+        } catch (error) {
+                return NextResponse.json({ error: "server_error" }, { status: 500 });
+        }
+}
+
+===== ./app/api/test/route.ts =====
+// app/api/test/route.ts
+import { NextResponse } from "next/server";
+
+export async function GET() {
+        return NextResponse.json({ status: "ok" });
+}
+
+===== ./drizzle.config.ts =====
+import 'dotenv/config';
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+        out: './drizzle',
+        schema: './lib/drizzle.ts',
+        dialect: 'postgresql',
+        dbCredentials: {
+                url: process.env.DATABASE_URL!,
+        },
+});
+
+===== ./lib/drizzle.ts =====
+// lib/drizzle.ts
+import {
+  json, pgTable, text, timestamp, integer, serial,
+} from "drizzle-orm/pg-core";
+import { InferSelectModel } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+
+const sql = postgres(process.env.POSTGRES_URL!, { ssl: "require" });
+
+export const PlayersTable = pgTable("players", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  gamesPlayed: integer("gamesPlayed").notNull().default(0),
+  wins: integer("wins").notNull().default(0),
+  losses: integer("losses").notNull().default(0),
+  totalShots: integer("totalShots").notNull().default(0),
+  totalHits: integer("totalHits").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const GamesTable = pgTable("games", {
+  id: serial("id").primaryKey(),
+  player1Id: integer("player1Id").notNull(),
+  player2Id: integer("player2Id"),
+  status: text("status").notNull().default("waiting_setup"),
+  currentTurn: integer("currentTurn"),
+  winnerId: integer("winnerId"),
+  gridSize: integer("gridSize").notNull().default(10),
+  maxPlayers: integer("maxPlayers").notNull().default(2),
+  totalMoves: integer("totalMoves").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export const GamePlayersTable = pgTable("game_players", {
+  id: serial("id").primaryKey(),
+  gameId: integer("gameId").notNull(),
+  playerId: integer("playerId").notNull(),
+  joinOrder: integer("joinOrder").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const ShipsTable = pgTable("ships", {
+  id: text("id").primaryKey(),
+  gameId: integer("gameId").notNull(),
+  playerId: integer("playerId").notNull(),
+  type: text("type").notNull(),
+  coordinates: json("coordinates").$type<any>().notNull(),
+});
+
+export const ShotsTable = pgTable("shots", {
+  id: serial("id").primaryKey(),
+  gameId: integer("gameId").notNull(),
+  playerId: integer("playerId").notNull(),
+  x: integer("x").notNull(),
+  y: integer("y").notNull(),
+  hit: integer("hit").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Player = InferSelectModel<typeof PlayersTable>;
+export type Game = InferSelectModel<typeof GamesTable>;
+export type Ship = InferSelectModel<typeof ShipsTable>;
+
+export const db = drizzle(sql);
+
+===== ./lib/seed.ts =====
+import postgres from 'postgres'
+
+const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' })
+
+export async function seed() {
+  // Create table with raw SQL
+  const createTable = await sql`
+      CREATE TABLE IF NOT EXISTS profiles (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        image VARCHAR(255),
+        "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+  `
+  console.log(`Created "profiles" table`)
+
+  const profiles = await Promise.all([
+    sql`
+          INSERT INTO profiles (name, email, image)
+          VALUES ('Guillermo Rauch', 'rauchg@vercel.com', 'https://images.ctfassets.net/e5382hct74si/2P1iOve0LZJRZWUzfXpi9r/9d4d27765764fb1ad7379d7cbe5f1043/ucxb4lHy_400x400.jpg')
+          ON CONFLICT (email) DO NOTHING;
+      `,
+    sql`
+          INSERT INTO profiles (name, email, image)
+          VALUES ('Lee Robinson', 'lee@vercel.com', 'https://images.ctfassets.net/e5382hct74si/4BtM41PDNrx4z1ml643tdc/7aa88bdde8b5b7809174ea5b764c80fa/adWRdqQ6_400x400.jpg')
+          ON CONFLICT (email) DO NOTHING;
+      `,
+    sql`
+          INSERT INTO profiles (name, email, image)
+          VALUES ('Steven Tey', 'stey@vercel.com', 'https://images.ctfassets.net/e5382hct74si/4QEuVLNyZUg5X6X4cW4pVH/eb7cd219e21b29ae976277871cd5ca4b/profile.jpg')
+          ON CONFLICT (email) DO NOTHING;
+      `,
+  ])
+  console.log(`Seeded ${profiles.length} users`)
+
+  return {
+    createTable,
+    insertedUsers: profiles,
+  }
+}
+
+===== ./lib/utils.ts =====
+import ms from 'ms'
+
+export const timeAgo = (timestamp: Date, timeOnly?: boolean): string => {
+  if (!timestamp) return 'never'
+  return `${ms(Date.now() - new Date(timestamp).getTime())}${
+    timeOnly ? '' : ' ago'
+  }`
+}
+
+===== ./lib/validators.ts =====
+import { z } from "zod";
+
+export const CoordinateValidator = z.tuple([z.int(), z.int()]);
+export const CoordinatesValidator = z.array(CoordinateValidator);
+
+export type Coordinates = z.infer<typeof CoordinatesValidator>;
+
+===== ./next-env.d.ts =====
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+import "./.next/dev/types/routes.d.ts";
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+
+===== ./proxy.ts =====
+import { NextRequest, NextResponse } from "next/server";
+
+const TEST_PASSWORD = process.env.TEST_PASSWORD!;
+
+export async function proxy(request: NextRequest) {
+  const { method } = request;
+  const { pathname, search } = request.nextUrl;
+
+  // Log every request
+  console.log(`${method} ${pathname}${search}`);
+  try {
+    const b = await request.json();
+    console.log(b);
+  } catch (e) {
+  }
+
+  // Test mode auth check (only for /api/test routes)
+  if (pathname.startsWith("/api/test")) {
+    // console.log(request.headers);
+    const testHeader = request.headers.get("X-Test-Mode") || request.headers.get('x-test-password');
+    if (!testHeader || testHeader !== TEST_PASSWORD) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+};
+
