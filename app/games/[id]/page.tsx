@@ -56,8 +56,12 @@ function buildEmptyGrid(size: number): CellState[][] {
   return Array.from({ length: size }, () => Array(size).fill("empty"));
 }
 
+const DEFAULT_URL = process.env.NODE_ENV === "production" ? "https://battleship.koon.us" : "http://localhost:3000";
+
 async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
+  const baseUrl = localStorage.getItem("battleship_url") || "";
+
+  const res = await fetch(baseUrl != DEFAULT_URL ? "/api/proxy?r=" + encodeURIComponent(baseUrl + url) : url, {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
@@ -227,11 +231,11 @@ function PlacementPhase({ gameId, playerId, gridSize, onPlaced }: PlacementPhase
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-            <Link href='/'>
-            <button type='button'>
-              Go Home
-            </button>
-            </Link>
+        <Link href='/'>
+          <button type='button'>
+            Go Home
+          </button>
+        </Link>
         {!allPlaced ? (
           <p className="text-sm text-slate-700">
             Placing: <span className="font-medium capitalize">{currentShipName}</span>
@@ -446,7 +450,7 @@ function PlayerSelector({ onSelect }: { onSelect: (id: number) => void }) {
 
   useEffect(() => {
     fetchJson<Array<{ player_id: number; username: string }>>("/api/players")
-      .then(setPlayers).catch(() => {}).finally(() => setLoading(false));
+      .then(setPlayers).catch(() => { }).finally(() => setLoading(false));
   }, []);
 
   async function handleCreate() {
@@ -512,7 +516,7 @@ function PlayerSelector({ onSelect }: { onSelect: (id: number) => void }) {
 function StatsPanel({ playerId }: { playerId: number }) {
   const [stats, setStats] = useState<PlayerStats | null>(null);
   useEffect(() => {
-    fetchJson<PlayerStats>(`/api/players/${playerId}/stats`).then(setStats).catch(() => {});
+    fetchJson<PlayerStats>(`/api/players/${playerId}/stats`).then(setStats).catch(() => { });
   }, [playerId]);
   if (!stats) return null;
   return (
@@ -549,7 +553,7 @@ export default function GamePage() {
         fetchJson<{ game_id: number; moves: Move[] }>(`/api/games/${gameId}/moves`),
       ]);
       setGame(g);
-      setMoves(m.moves);
+      setMoves("moves" in m ? m.moves : m);
     } catch (e: any) {
       setError(e.message ?? "Game not found");
     } finally {
@@ -591,11 +595,11 @@ export default function GamePage() {
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
 
         <div className="flex items-start justify-between flex-wrap gap-3">
-            <Link href='/'>
+          <Link href='/'>
             <button type='button'>
               Go Home
             </button>
-            </Link>
+          </Link>
           <div>
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-medium text-slate-900">Game #{game.game_id}</h1>
@@ -706,4 +710,4 @@ export default function GamePage() {
       </div>
     </div>
   );
-}
+} 

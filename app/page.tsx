@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface GameSummary {
@@ -8,20 +8,26 @@ interface GameSummary {
   status: string;
 }
 
-async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw Object.assign(new Error(err.error ?? "Request failed"), { status: res.status });
-  }
-  return res.json();
-}
+const DEFAULT_URL = process.env.NODE_ENV === "production" ? "https://battleship.koon.us" : "http://localhost:3000";
 
 export default function Home() {
   const router = useRouter();
+
+  const ref = useRef<HTMLInputElement>(null);
+  const [baseUrl, setBaseUrl] = useState<string>();
+
+  async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
+    if (baseUrl == undefined) throw Error("No base url");
+    const res = await fetch(baseUrl != DEFAULT_URL ? "/api/proxy?r=" + encodeURIComponent(baseUrl + url) : url, {
+      headers: { "Content-Type": "application/json" },
+      ...opts,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(err.error ?? "Request failed"), { status: res.status });
+    }
+    return res.json();
+  }
 
   const [playerId, setPlayerId] = useState<number | null>(null);
   const [players, setPlayers] = useState<Array<{ player_id: number; username: string }>>([]);
@@ -46,15 +52,29 @@ export default function Home() {
   const [joinError, setJoinError] = useState<string | null>(null);
 
   useEffect(() => {
+    const storedUrl = localStorage.getItem("battleship_url");
+    if (storedUrl) setBaseUrl(storedUrl);
+  }, []);
+
+  function updateBaseUrl(selected: string | undefined) {
+    if (selected) {
+      localStorage.setItem("battleship_url", selected);
+    } else {
+      localStorage.removeItem("battleship_url");
+    }
+    setBaseUrl(selected);
+  }
+
+  useEffect(() => {
     const stored = localStorage.getItem("battleship_player_id");
     if (stored) setPlayerId(Number(stored));
 
     fetchJson<Array<{ player_id: number; username: string }>>("/api/players")
-      .then(setPlayers).catch(() => {});
+      .then(setPlayers).catch(() => { });
 
     fetchJson<GameSummary[]>("/api/games")
-      .then(setGames).catch(() => {}).finally(() => setLoadingGames(false));
-  }, []);
+      .then(setGames).catch(() => { }).finally(() => setLoadingGames(false));
+  }, [baseUrl]);
 
   function selectPlayer(id: number) {
     setPlayerId(id);
@@ -139,6 +159,17 @@ export default function Home() {
 
   return (
     <main className="home">
+      {baseUrl == undefined ? <div className="inset-0 fixed bg-black/60 z-50 backdrop-blur-sm flex items-center justify-center">
+        <div className="bg-white rounded py-8 px-12 flex flex-col gap-4">
+          <h1 className="text-3xl font-bold">Base URL</h1>
+          <p>Please enter the URL of the server to test. Otherwise, we will use "{DEFAULT_URL}"</p>
+          <input ref={ref} placeholder={DEFAULT_URL} />
+          <button onClick={() => {
+            const selected = ref.current?.value || DEFAULT_URL;
+            updateBaseUrl(selected);
+          }} className="bg-black text-white rounded-sm">Continue</button>
+        </div>
+      </div> : <div className="fixed left-0 top-0 z-50">Selected URL: {baseUrl} <button className="underline" onClick={() => updateBaseUrl(undefined)}>Change</button></div>}
       {/* Animated ocean grid background */}
       <div className="ocean-grid" aria-hidden="true">
         {Array.from({ length: 100 }).map((_, i) => (
@@ -338,7 +369,7 @@ export default function Home() {
           --font-display: "Courier New", "Courier", monospace;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* * { box-sizing: border-box; margin: 0; padding: 0; } */
 
         .home {
           min-height: 100vh;
@@ -575,4 +606,4 @@ export default function Home() {
       `}</style>
     </main>
   );
-}
+} 
